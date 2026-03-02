@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hasil Eksperimen ECC + DE - Grafik</title>
+  <style>
+    body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 20px; background: #f5f5f5; }
+    h1 { color: #1a1a2e; border-bottom: 2px solid #16213e; padding-bottom: 8px; }
+    .summary { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .summary ul { margin: 8px 0 0 20px; }
+    .cards { display: flex; flex-wrap: wrap; gap: 24px; }
+    .card { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); max-width: 100%; }
+    .card h3 { margin: 0 0 12px 0; color: #16213e; font-size: 1.1em; }
+    .card img { max-width: 100%; height: auto; display: block; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Hasil Eksperimen ECC + DE — Grafik</h1>
+  <section class='summary'><h2>Ringkasan Analisis</h2><ul><li><strong>Parameter paling mempengaruhi RAM:</strong> de_population</li><li>de_population: korelasi=-0.054, range RAM=1.2923</li><li>de_CR: korelasi=0.0445, range RAM=1.2963</li><li>de_F: korelasi=0.0276, range RAM=1.2963</li><li>de_generations: korelasi=0.0, range RAM=1.2963</li></ul></section>
+  <div class="cards">
+    <div class="card"><h3>RAM vs Jumlah Operasi (Iterations)</h3><img src="ram_vs_iterations.png" alt="RAM vs Jumlah Operasi (Iterations)" /></div>
+<div class="card"><h3>RAM vs Ukuran Curve (bits)</h3><img src="ram_vs_curve_size.png" alt="RAM vs Ukuran Curve (bits)" /></div>
+<div class="card"><h3>RAM vs Jumlah Threads</h3><img src="ram_vs_threads.png" alt="RAM vs Jumlah Threads" /></div>
+<div class="card"><h3>DE: Ringkasan Memory, Time, CPU</h3><img src="de_summary.png" alt="DE: Ringkasan Memory, Time, CPU" /></div>
+<div class="card"><h3>Parameter DE yang Paling Mempengaruhi RAM</h3><img src="sensitivity_ranking.png" alt="Parameter DE yang Paling Mempengaruhi RAM" /></div>
+  </div>
+</body>
+</html>
