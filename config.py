@@ -1,46 +1,36 @@
 # -*- coding: utf-8 -*-
 """
-Konfigurasi parameter ECC + DE untuk eksperimen resource (RAM/CPU/Time).
-Parameter ini divariasikan untuk analisis: mana yang paling mempengaruhi RAM.
+Konfigurasi parameter ECC + DE untuk eksperimen blockchain simulator.
+Parameter mengikuti spesifikasi jurnal penelitian.
 """
 
-# Mapping nama curve ke modul ecdsa (NIST)
+# Mapping nama curve ke modul ecdsa (NIST) — hanya 3 kurva jurnal
 CURVES = {
     "secp192r1": "NIST192p",   # P-192
     "secp224r1": "NIST224p",   # P-224
     "secp256r1": "NIST256p",   # P-256
-    "secp384r1": "NIST384p",   # P-384
-    "secp521r1": "NIST521p",   # P-521
 }
 
-# Skenario penelitian — hanya DE (scalar hasil Differential Evolution)
+# Skenario penelitian (Scenario Matrix dari jurnal)
+# S1-S2: P192, 100 tx, 1 node (Random vs DE)
+# S3-S4: P224, 1000 tx, 3 nodes (Random vs DE)
+# S5-S6: P256, 5000 tx, 5 nodes (Random vs DE)
 SCENARIOS = [
-    {"id": "S1", "curve": "secp192r1", "scalar_type": "de", "ops": 100, "threads": 1},
-    {"id": "S2", "curve": "secp256r1", "scalar_type": "de", "ops": 1000, "threads": 4},
-    {"id": "S3", "curve": "secp521r1", "scalar_type": "de", "ops": 5000, "threads": 8},
+    {"id": "S1", "curve": "secp192r1", "scalar_type": "random", "transactions": 100,  "nodes": 1},
+    {"id": "S2", "curve": "secp192r1", "scalar_type": "de",     "transactions": 100,  "nodes": 1},
+    {"id": "S3", "curve": "secp224r1", "scalar_type": "random", "transactions": 1000, "nodes": 3},
+    {"id": "S4", "curve": "secp224r1", "scalar_type": "de",     "transactions": 1000, "nodes": 3},
+    {"id": "S5", "curve": "secp256r1", "scalar_type": "random", "transactions": 5000, "nodes": 5},
+    {"id": "S6", "curve": "secp256r1", "scalar_type": "de",     "transactions": 5000, "nodes": 5},
 ]
 
-# Parameter Differential Evolution (untuk analisis pengaruh ke RAM)
+# Parameter Differential Evolution (sesuai jurnal)
 DE_PARAMS = {
-    "population_size": [50, 100, 200],   # Populasi besar = RAM tinggi
-    "generations": [10, 30, 50],
-    "F": [0.5, 0.8, 1.0],                # Differential weight
-    "CR": [0.3, 0.7, 0.9],               # Crossover probability
+    "population_size": 50,   # M = 50
+    "mutation_factor": 0.8,  # mr = 0.8
+    "crossover_rate": 0.9,   # cr = 0.9
+    "generations": 100,      # 100 generasi
 }
-
-# Default DE (jika tidak divariasikan)
-DE_DEFAULT = {
-    "population_size": 100,
-    "generations": 30,
-    "F": 0.8,
-    "CR": 0.7,
-}
-
-# Batch operasi untuk stress test RAM
-BATCH_SIZES = [10, 100, 1000, 10000]
-
-# Thread counts untuk parallel
-THREAD_COUNTS = [1, 2, 4, 8, 16]
 
 # Output
 RESULTS_DIR = "results"

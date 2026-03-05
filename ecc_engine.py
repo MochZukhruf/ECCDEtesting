@@ -1,31 +1,40 @@
 # -*- coding: utf-8 -*-
 """
-ECC Engine: operasi scalar multiplication pada curve NIST (secp192r1 - secp521r1).
-Menggunakan library ecdsa; mendukung batch operasi untuk stress test RAM.
+ECC Engine: operasi kriptografi pada curve NIST (secp192r1, secp224r1, secp256r1).
+Mendukung key generation, transaction signing, dan signature verification.
 """
 
-import os
-from typing import List, Optional
+import hashlib
+from typing import List, Optional, Tuple
 
-from ecdsa import NIST192p, NIST224p, NIST256p, NIST384p, NIST521p, SigningKey
+from ecdsa import NIST192p, NIST224p, NIST256p, SigningKey, VerifyingKey, BadSignatureError
 from ecdsa.ellipticcurve import Point
 
-# Mapping nama curve -> class curve
+# Mapping nama curve -> class curve (hanya 3 kurva jurnal)
 _CURVE_MAP = {
     "secp192r1": NIST192p,
     "secp224r1": NIST224p,
     "secp256r1": NIST256p,
-    "secp384r1": NIST384p,
-    "secp521r1": NIST521p,
 }
 
 
 def get_curve(curve_name: str):
-    """Ambil class curve dari nama (secp256r1, dll)."""
+    """Ambil class curve dari nama (secp192r1, secp224r1, secp256r1)."""
     c = _CURVE_MAP.get(curve_name)
     if c is None:
         raise ValueError(f"Curve tidak didukung: {curve_name}. Gunakan: {list(_CURVE_MAP.keys())}")
     return c
+
+
+def get_curve_order(curve_name: str) -> int:
+    """Order curve (n) untuk validasi scalar."""
+    return get_curve(curve_name).order
+
+
+def get_curve_bit_size(curve_name: str) -> int:
+    """Bit size curve (192, 224, 256)."""
+    bits = {"secp192r1": 192, "secp224r1": 224, "secp256r1": 256}
+    return bits.get(curve_name, 0)
 
 
 def scalar_multiply(curve_name: str, scalar: int, point: Optional[Point] = None) -> Point:
@@ -43,15 +52,52 @@ def scalar_multiply(curve_name: str, scalar: int, point: Optional[Point] = None)
     return scalar * base
 
 
-def generate_key_pair(curve_name: str, entropy: Optional[bytes] = None):
+def generate_key_pair(curve_name: str, entropy: Optional[bytes] = None) -> Tuple[SigningKey, VerifyingKey]:
     """Generate key pair (private key = scalar) untuk curve."""
     curve = get_curve(curve_name)
     if entropy is not None:
-        sk = SigningKey.from_string(entropy[: curve.baselen], curve=curve)
+        sk = SigningKey.from_string(entropy[:curve.baselen], curve=curve)
     else:
         sk = SigningKey.generate(curve=curve)
     vk = sk.get_verifying_key()
     return sk, vk
+
+
+def generate_key_pair_from_scalar(curve_name: str, scalar: int) -> Tuple[SigningKey, VerifyingKey]:
+    """
+    Generate key pair deterministik dari scalar.
+    Scalar dikonversi ke bytes dan dipakai sebagai private key.
+    """
+    curve = get_curve(curve_name)
+    order = curve.order
+    scalar = scalar % order
+    if scalar == 0:
+        scalar = 1
+    scalar_bytes = scalar.to_bytes(curve.baselen, byteorder="big")
+    sk = SigningKey.from_string(scalar_bytes, curve=curve)
+    vk = sk.get_verifying_key()
+    return sk, vk
+
+
+def sign_data(signing_key: SigningKey, data: bytes) -> bytes:
+    """
+    Sign data menggunakan private key (ECDSA).
+    Data di-hash dengan SHA-256 sebelum signing.
+    Returns signature bytes.
+    """
+    return signing_key.sign(data, hashfunc=hashlib.sha256)
+
+
+def verify_signature(verifying_key: VerifyingKey, data: bytes, signature: bytes) -> bool:
+    """
+    Verifikasi signature menggunakan public key.
+    Returns True jika valid, False jika tidak.
+    """
+    try:
+        verifying_key.verify(signature, data, hashfunc=hashlib.sha256)
+        return True
+    except BadSignatureError:
+        return False
 
 
 def run_batch_scalar_multiplication(
@@ -62,9 +108,7 @@ def run_batch_scalar_multiplication(
 ) -> List[Point]:
     """
     Jalankan banyak operasi scalar multiplication (batch).
-    Jika use_parallel=True, gunakan multiprocessing (num_workers).
-    Worker _worker_scalar_multiply di level modul agar bisa di-pickle.
-    Return list titik hasil (untuk konsumsi RAM yang terukur).
+    Return list titik hasil.
     """
     results: List[Point] = []
 
@@ -87,24 +131,10 @@ def run_batch_scalar_multiplication(
 
 
 def _worker_scalar_multiply(curve_name: str, scalar: int) -> Point:
-    """
-    Worker level modul (bisa di-pickle) untuk ProcessPoolExecutor.
-    Jangan panggil langsung; dipakai oleh run_batch_scalar_multiplication.
-    """
+    """Worker untuk batch scalar multiplication."""
     curve = get_curve(curve_name)
     order = curve.order
     k = int(scalar) % order
     if k == 0:
         k = 1
     return k * curve.generator
-
-
-def get_curve_order(curve_name: str) -> int:
-    """Order curve (n) untuk validasi scalar."""
-    return get_curve(curve_name).order
-
-
-def get_curve_bit_size(curve_name: str) -> int:
-    """Bit size curve (192, 224, 256, 384, 521)."""
-    bits = {"secp192r1": 192, "secp224r1": 224, "secp256r1": 256, "secp384r1": 384, "secp521r1": 521}
-    return bits.get(curve_name, 0)

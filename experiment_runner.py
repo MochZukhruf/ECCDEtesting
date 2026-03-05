@@ -1,273 +1,264 @@
 # -*- coding: utf-8 -*-
 """
-Experiment Runner: menjalankan skenario ECC (S1–S6) dan parameter sweep
-untuk mengidentifikasi parameter mana yang paling mempengaruhi RAM.
+Experiment Runner: menjalankan skenario blockchain S1–S6.
+Workflow per skenario:
+1. Generate scalars (random atau DE)
+2. Generate ECC keypairs dari scalars
+3. Create transactions (random sender/receiver/amount)
+4. Sign all transactions
+5. Verify all transactions
+6. Build blocks via Node
+7. Measure RAM/CPU/time
+8. Run statistical tests pada scalars
+9. Log results sebagai JSON
 """
 
 import os
 import json
-import multiprocessing
-from typing import Dict, Any, List, Optional
-from pathlib import Path
+import time
+import random as rand_module
+from typing import List, Dict, Any, Optional
 
-from config import SCENARIOS, CURVES, DE_DEFAULT, BATCH_SIZES, THREAD_COUNTS, DE_PARAMS
-from ecc_engine import run_batch_scalar_multiplication, get_curve_bit_size
+from config import SCENARIOS, DE_PARAMS, RESULTS_DIR, LOG_FILE
+from ecc_engine import (
+    generate_key_pair_from_scalar,
+    get_curve_bit_size,
+)
 from scalar_generator import get_scalars
-from resource_monitor import run_and_measure, format_metrics, measure_block
+from resource_monitor import measure_block, format_metrics
+from blockchain_sim.transaction import Transaction
+from blockchain_sim.node import Node
+from analysis.statistical_analyzer import run_all_tests
 
-RESULTS_DIR = "results"
-LOG_FILE = "experiment_log.jsonl"
+
+def _generate_address(verifying_key) -> str:
+    """Generate alamat dari public key (hex string)."""
+    import hashlib
+    vk_bytes = verifying_key.to_string()
+    return hashlib.sha256(vk_bytes).hexdigest()[:40]
 
 
 def _run_one_scenario(
-    scenario_id: str,
-    curve_name: str,
-    scalar_type: str,
-    ops: int,
-    threads: int,
-    de_population: int = 100,
-    de_generations: int = 30,
-    de_F: float = 0.8,
-    de_CR: float = 0.7,
+    scenario: Dict[str, Any],
+    de_params: Dict[str, Any],
     seed: int = 42,
 ) -> Dict[str, Any]:
     """
-    Jalankan satu skenario: generate scalars, jalankan batch ECC, ukur resource.
+    Jalankan satu skenario blockchain lengkap.
+    Returns dict hasil eksperimen.
     """
-    # Generate scalars (random atau DE) — ini bisa memakan RAM untuk DE
-    def do_work():
+    scenario_id = scenario["id"]
+    curve_name = scenario["curve"]
+    scalar_type = scenario["scalar_type"]
+    num_transactions = scenario["transactions"]
+    num_nodes = scenario["nodes"]
+
+    print(f"\n{'='*60}")
+    print(f"  Skenario {scenario_id}: {curve_name} | {scalar_type} | "
+          f"{num_transactions} tx | {num_nodes} nodes")
+    print(f"{'='*60}")
+
+    bit_length = get_curve_bit_size(curve_name)
+    result = {
+        "scenario": scenario_id,
+        "curve": curve_name,
+        "scalar_type": scalar_type,
+        "transactions": num_transactions,
+        "nodes": num_nodes,
+    }
+
+    # ---- Measurement block ----
+    with measure_block(use_tracemalloc=True) as metrics:
+
+        # Step 1: Generate scalars
+        print(f"  [1/7] Generate {num_transactions} scalars ({scalar_type})...")
+        t0 = time.perf_counter()
         scalars = get_scalars(
-            curve_name,
-            count=ops,
+            curve_name=curve_name,
+            count=num_transactions,
             scalar_type=scalar_type,
-            de_population=de_population,
-            de_generations=de_generations,
-            de_F=de_F,
-            de_CR=de_CR,
+            de_population=de_params["population_size"],
+            de_generations=de_params["generations"],
+            de_F=de_params["mutation_factor"],
+            de_CR=de_params["crossover_rate"],
             seed=seed,
         )
-        results = run_batch_scalar_multiplication(
-            curve_name,
-            scalars,
-            use_parallel=(threads > 1),
-            num_workers=threads,
-        )
-        return results  # simpan agar tidak di-GC sebelum ukur
+        t_scalar = time.perf_counter() - t0
+        print(f"       → {len(scalars)} scalars in {t_scalar:.2f}s")
 
-    metrics = run_and_measure(do_work, use_tracemalloc=True)
-    out = {
-        "scenario_id": scenario_id,
-        "curve": curve_name,
-        "curve_bits": get_curve_bit_size(curve_name),
-        "scalar_type": scalar_type,
-        "ops": ops,
-        "threads": threads,
-        "de_population": de_population,
-        "de_generations": de_generations,
-        "de_F": de_F,
-        "de_CR": de_CR,
-        **format_metrics(metrics),
+        # Step 2: Generate keypairs dari scalars
+        print(f"  [2/7] Generate {num_transactions} ECC keypairs...")
+        t0 = time.perf_counter()
+        keypairs = []
+        for s in scalars:
+            sk, vk = generate_key_pair_from_scalar(curve_name, s)
+            keypairs.append((sk, vk))
+        t_keygen = time.perf_counter() - t0
+        print(f"       → {len(keypairs)} keypairs in {t_keygen:.2f}s")
+
+        # Step 3: Create transactions
+        print(f"  [3/7] Create {num_transactions} transactions...")
+        t0 = time.perf_counter()
+        rand_module.seed(seed)
+        transactions: List[Transaction] = []
+        addresses = [_generate_address(vk) for _, vk in keypairs]
+
+        for i in range(num_transactions):
+            sender_idx = i % len(keypairs)
+            receiver_idx = (i + 1) % len(keypairs)
+            tx = Transaction(
+                sender=addresses[sender_idx],
+                receiver=addresses[receiver_idx],
+                amount=round(rand_module.uniform(0.01, 100.0), 4),
+                timestamp=time.time() + i * 0.001,
+            )
+            transactions.append(tx)
+        t_create = time.perf_counter() - t0
+        print(f"       → {len(transactions)} transactions in {t_create:.4f}s")
+
+        # Step 4: Sign all transactions
+        print(f"  [4/7] Sign {num_transactions} transactions...")
+        t0 = time.perf_counter()
+        for i, tx in enumerate(transactions):
+            sender_idx = i % len(keypairs)
+            sk, vk = keypairs[sender_idx]
+            tx.sign(sk)
+        t_sign = time.perf_counter() - t0
+        print(f"       → Signed in {t_sign:.2f}s")
+
+        # Step 5: Verify all transactions
+        print(f"  [5/7] Verify {num_transactions} transactions...")
+        t0 = time.perf_counter()
+        verified_count = sum(1 for tx in transactions if tx.verify())
+        t_verify = time.perf_counter() - t0
+        print(f"       → {verified_count}/{num_transactions} verified in {t_verify:.2f}s")
+
+        # Step 6: Build blocks via Node(s)
+        print(f"  [6/7] Build blockchain ({num_nodes} nodes)...")
+        t0 = time.perf_counter()
+        nodes: List[Node] = []
+        for node_id in range(num_nodes):
+            node = Node(node_id=node_id)
+            # Distribusikan transaksi ke nodes (round-robin)
+            node_txs = [
+                tx for j, tx in enumerate(transactions)
+                if j % num_nodes == node_id
+            ]
+            node.add_transactions(node_txs)
+            blocks = node.mine_all_pending()
+            nodes.append(node)
+        t_block = time.perf_counter() - t0
+
+        total_blocks = sum(len(n.blockchain) for n in nodes)
+        chain_valid = all(n.validate_chain() for n in nodes)
+        print(f"       → {total_blocks} blocks, chain_valid={chain_valid} in {t_block:.4f}s")
+
+        # Step 7: Statistical tests pada scalars
+        print(f"  [7/7] Run statistical tests...")
+        t0 = time.perf_counter()
+        stat_results = run_all_tests(scalars, bit_length)
+        t_stats = time.perf_counter() - t0
+        print(f"       → {len(stat_results)} tests in {t_stats:.4f}s")
+
+    # ---- Compile results ----
+    formatted = format_metrics(metrics)
+    result["RAM_MB"] = formatted["peak_memory_mb"]
+    result["CPU_percent"] = formatted["cpu_percent"]
+    result["execution_time_ms"] = round(formatted["time_sec"] * 1000, 2)
+
+    # Timing breakdown
+    result["timing"] = {
+        "scalar_gen_sec": round(t_scalar, 4),
+        "keygen_sec": round(t_keygen, 4),
+        "tx_create_sec": round(t_create, 4),
+        "sign_sec": round(t_sign, 4),
+        "verify_sec": round(t_verify, 4),
+        "block_build_sec": round(t_block, 4),
+        "stats_sec": round(t_stats, 4),
     }
-    out["throughput_ops_per_sec"] = round(ops / out["time_sec"], 2) if out["time_sec"] > 0 else 0
-    return out
+
+    # Blockchain info
+    result["blockchain"] = {
+        "total_blocks": total_blocks,
+        "chain_valid": chain_valid,
+        "verified_transactions": verified_count,
+    }
+
+    # Statistical test results
+    entropy_result = next(
+        (r for r in stat_results if r["test_name"] == "Shannon Entropy"), {}
+    )
+    chi_result = next(
+        (r for r in stat_results if r["test_name"] == "Chi-Square"), {}
+    )
+    result["entropy"] = entropy_result.get("statistic", 0)
+    result["chi_square"] = chi_result.get("p_value", 0)
+    result["statistical_tests"] = stat_results
+
+    # Print summary
+    print(f"\n  Summary {scenario_id}:")
+    print(f"    RAM       : {result['RAM_MB']:.2f} MB")
+    print(f"    CPU       : {result['CPU_percent']:.1f}%")
+    print(f"    Time      : {result['execution_time_ms']:.1f} ms")
+    print(f"    Entropy   : {result['entropy']:.6f}")
+    print(f"    Chi-square: {result['chi_square']}")
+    for st in stat_results:
+        status = "✓ PASS" if st["passed"] else "✗ FAIL"
+        print(f"    {st['test_name']:20s} : {status}  (stat={st['statistic']})")
+
+    return result
 
 
-def run_scenarios(
+def run_all_scenarios(
     scenarios: Optional[List[Dict]] = None,
+    de_params: Optional[Dict] = None,
     results_dir: str = RESULTS_DIR,
     log_file: str = LOG_FILE,
-    de_overrides: Optional[Dict] = None,
+    seed: int = 42,
 ) -> List[Dict[str, Any]]:
     """
-    Jalankan daftar skenario (default: SCENARIOS dari config) dan tulis log.
+    Jalankan semua skenario (S1–S6) dan simpan log JSONL.
     """
-    scenarios = scenarios or SCENARIOS
-    de = {**DE_DEFAULT, **(de_overrides or {})}
-    Path(results_dir).mkdir(parents=True, exist_ok=True)
+    if scenarios is None:
+        scenarios = SCENARIOS
+    if de_params is None:
+        de_params = DE_PARAMS
+
+    os.makedirs(results_dir, exist_ok=True)
     log_path = os.path.join(results_dir, log_file)
-    all_results: List[Dict[str, Any]] = []
 
-    for s in scenarios:
-        sid = s.get("id", "unknown")
-        print(f"Running {sid} ... curve={s['curve']} type={s['scalar_type']} ops={s['ops']} threads={s['threads']}")
-        try:
-            res = _run_one_scenario(
-                scenario_id=sid,
-                curve_name=s["curve"],
-                scalar_type=s["scalar_type"],
-                ops=s["ops"],
-                threads=s["threads"],
-                de_population=de.get("population_size", DE_DEFAULT["population_size"]),
-                de_generations=de.get("generations", DE_DEFAULT["generations"]),
-                de_F=de.get("F", DE_DEFAULT["F"]),
-                de_CR=de.get("CR", DE_DEFAULT["CR"]),
-            )
-            all_results.append(res)
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(res, ensure_ascii=False) + "\n")
-        except Exception as e:
-            print(f"Error {sid}: {e}")
-            all_results.append({
-                "scenario_id": sid,
-                "error": str(e),
-                "curve": s.get("curve"),
-                "scalar_type": s.get("scalar_type"),
-                "ops": s.get("ops"),
-                "threads": s.get("threads"),
-            })
+    all_results = []
 
-    return all_results
+    print(f"\n{'#'*60}")
+    print(f"  ECC-DE Blockchain Experiment")
+    print(f"  {len(scenarios)} scenarios | DE: pop={de_params['population_size']}, "
+          f"gen={de_params['generations']}, F={de_params['mutation_factor']}, "
+          f"CR={de_params['crossover_rate']}")
+    print(f"{'#'*60}")
 
+    for scenario in scenarios:
+        result = _run_one_scenario(scenario, de_params, seed=seed)
+        all_results.append(result)
 
-def run_parameter_sweep(
-    curve_name: str = "secp256r1",
-    ops_list: Optional[List[int]] = None,
-    threads_list: Optional[List[int]] = None,
-    de_population_list: Optional[List[int]] = None,
-    results_dir: str = RESULTS_DIR,
-    log_file: str = "parameter_sweep.jsonl",
-) -> List[Dict[str, Any]]:
-    """
-    Parameter sweep: variasi ops, threads, DE population untuk analisis
-    mana yang paling mempengaruhi RAM.
-    """
-    ops_list = ops_list or BATCH_SIZES
-    threads_list = threads_list or THREAD_COUNTS
-    de_population_list = de_population_list or DE_PARAMS["population_size"]
-    Path(results_dir).mkdir(parents=True, exist_ok=True)
-    log_path = os.path.join(results_dir, log_file)
-    all_results: List[Dict[str, Any]] = []
+        # Append ke log file (JSONL)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(result, default=str) + "\n")
 
-    # Sweep: ops (hanya DE)
-    for ops in ops_list:
-        th = 1
-        print(f"Sweep ops: curve={curve_name} scalar_type=de ops={ops} threads={th}")
-        try:
-            res = _run_one_scenario(
-                scenario_id=f"ops_{ops}_de",
-                curve_name=curve_name,
-                scalar_type="de",
-                ops=ops,
-                threads=th,
-            )
-            res["sweep_param"] = "ops"
-            res["sweep_value"] = ops
-            all_results.append(res)
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(res, ensure_ascii=False) + "\n")
-        except Exception as e:
-            print(f"Error: {e}")
+    # Print comparison table
+    print(f"\n{'='*80}")
+    print(f"  HASIL PERBANDINGAN")
+    print(f"{'='*80}")
+    print(f"  {'Scenario':<10} {'Curve':<12} {'Scalar':<8} {'TX':<6} "
+          f"{'RAM_MB':<10} {'CPU%':<8} {'Time_ms':<12} {'Entropy':<10}")
+    print(f"  {'-'*76}")
+    for r in all_results:
+        print(f"  {r['scenario']:<10} {r['curve']:<12} {r['scalar_type']:<8} "
+              f"{r['transactions']:<6} {r['RAM_MB']:<10.2f} {r['CPU_percent']:<8.1f} "
+              f"{r['execution_time_ms']:<12.1f} {r['entropy']:<10.6f}")
 
-    # Sweep: threads (hanya DE)
-    for th in threads_list:
-        ops = 500
-        print(f"Sweep threads: curve={curve_name} scalar_type=de ops={ops} threads={th}")
-        try:
-            res = _run_one_scenario(
-                scenario_id=f"threads_{th}_de",
-                curve_name=curve_name,
-                scalar_type="de",
-                ops=ops,
-                threads=th,
-            )
-            res["sweep_param"] = "threads"
-            res["sweep_value"] = th
-            all_results.append(res)
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(res, ensure_ascii=False) + "\n")
-        except Exception as e:
-            print(f"Error: {e}")
-
-    # Sweep: DE population (hanya untuk scalar_type=de)
-    for pop in de_population_list:
-        print(f"Sweep DE population: curve={curve_name} population={pop}")
-        try:
-            res = _run_one_scenario(
-                scenario_id=f"de_pop_{pop}",
-                curve_name=curve_name,
-                scalar_type="de",
-                ops=100,
-                threads=1,
-                de_population=pop,
-            )
-            res["sweep_param"] = "de_population"
-            res["sweep_value"] = pop
-            all_results.append(res)
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(res, ensure_ascii=False) + "\n")
-        except Exception as e:
-            print(f"Error: {e}")
-
-    # Sweep: DE generations
-    de_generations_list = DE_PARAMS.get("generations", [10, 30, 50])
-    for gen in de_generations_list:
-        print(f"Sweep DE generations: curve={curve_name} generations={gen}")
-        try:
-            res = _run_one_scenario(
-                scenario_id=f"de_gen_{gen}",
-                curve_name=curve_name,
-                scalar_type="de",
-                ops=100,
-                threads=1,
-                de_generations=gen,
-            )
-            res["sweep_param"] = "de_generations"
-            res["sweep_value"] = gen
-            all_results.append(res)
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(res, ensure_ascii=False) + "\n")
-        except Exception as e:
-            print(f"Error: {e}")
-
-    # Sweep: DE F (differential weight)
-    de_F_list = DE_PARAMS.get("F", [0.5, 0.8, 1.0])
-    for f in de_F_list:
-        print(f"Sweep DE F: curve={curve_name} F={f}")
-        try:
-            res = _run_one_scenario(
-                scenario_id=f"de_F_{f}",
-                curve_name=curve_name,
-                scalar_type="de",
-                ops=100,
-                threads=1,
-                de_F=f,
-            )
-            res["sweep_param"] = "de_F"
-            res["sweep_value"] = f
-            all_results.append(res)
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(res, ensure_ascii=False) + "\n")
-        except Exception as e:
-            print(f"Error: {e}")
-
-    # Sweep: DE CR (crossover rate)
-    de_CR_list = DE_PARAMS.get("CR", [0.3, 0.7, 0.9])
-    for cr in de_CR_list:
-        print(f"Sweep DE CR: curve={curve_name} CR={cr}")
-        try:
-            res = _run_one_scenario(
-                scenario_id=f"de_CR_{cr}",
-                curve_name=curve_name,
-                scalar_type="de",
-                ops=100,
-                threads=1,
-                de_CR=cr,
-            )
-            res["sweep_param"] = "de_CR"
-            res["sweep_value"] = cr
-            all_results.append(res)
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(res, ensure_ascii=False) + "\n")
-        except Exception as e:
-            print(f"Error: {e}")
-
+    print(f"\n  Log disimpan: {log_path}")
     return all_results
 
 
 if __name__ == "__main__":
-    import sys
-    mode = (sys.argv[1] if len(sys.argv) > 1 else "scenarios").lower()
-    if mode == "sweep":
-        run_parameter_sweep()
-    else:
-        run_scenarios()
+    run_all_scenarios()

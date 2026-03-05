@@ -1,64 +1,86 @@
 # -*- coding: utf-8 -*-
 """
-Entry point: ECC + DE Resource Experiment.
-- Phase 1: ECC Implementation (ecc_engine)
-- Phase 2: Scalar Generation — Random vs DE (scalar_generator)
-- Phase 3: ECC Operation Execution (experiment_runner)
-- Phase 4: Resource Measurement & Analysis (resource_monitor, analysis, visualization)
+Entry point: ECC + DE Blockchain Simulator Experiment.
 
-Tujuan: menganalisis parameter mana (curve, ops, threads, DE population/F/CR)
-yang paling mempengaruhi konsumsi RAM.
+Workflow:
+1. Generate scalar (random / DE optimized)
+2. Generate ECC keypair
+3. Create transactions
+4. Sign transactions
+5. Verify transactions
+6. Build blocks (blockchain)
+7. Measure RAM/CPU/time
+8. Run statistical tests
+9. Compare results
+
+Tujuan: melihat pengaruh scalar DE terhadap performa dan resource blockchain.
 """
 
 import argparse
 import sys
 from pathlib import Path
 
-from config import RESULTS_DIR, SCENARIOS
+from config import RESULTS_DIR, SCENARIOS, DE_PARAMS
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="ECC + DE Resource Experiment: analisis dampak parameter terhadap RAM/CPU/time."
+        description="ECC-DE Blockchain Simulator Experiment"
     )
     parser.add_argument(
         "mode",
         nargs="?",
         default="all",
-        choices=["scenarios", "sweep", "analysis", "viz", "all"],
-        help="scenarios=S1-S6, sweep=parameter sweep, analysis=sensitivity, viz=grafik, all=scenarios+sweep+analysis+viz",
+        choices=["scenarios", "viz", "all"],
+        help="scenarios=S1-S6, viz=grafik, all=scenarios+viz",
+    )
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        default=None,
+        help="Run specific scenario (e.g. S1, S2, S3)",
     )
     parser.add_argument("--results-dir", default=RESULTS_DIR, help="Folder hasil log")
-    parser.add_argument("--quick", action="store_true", help="Quick run: kurangi ops dan DE population")
-    parser.add_argument("--no-browser", action="store_true", help="Jangan buka dashboard grafik di browser")
+    parser.add_argument(
+        "--quick", action="store_true",
+        help="Quick run: kurangi jumlah transaksi (20 per skenario)"
+    )
+    parser.add_argument(
+        "--no-browser", action="store_true",
+        help="Jangan buka dashboard grafik di browser"
+    )
     args = parser.parse_args()
+
+    # Prepare scenarios
+    scenarios = SCENARIOS
+    de_params = dict(DE_PARAMS)
 
     if args.quick:
         # Override untuk tes cepat
-        import config as cfg
-        cfg.SCENARIOS = [
-            {"id": "S1", "curve": "secp192r1", "scalar_type": "de", "ops": 20, "threads": 1},
-            {"id": "S2", "curve": "secp256r1", "scalar_type": "de", "ops": 50, "threads": 1},
+        scenarios = [
+            {"id": "S1", "curve": "secp192r1", "scalar_type": "random", "transactions": 20, "nodes": 1},
+            {"id": "S2", "curve": "secp192r1", "scalar_type": "de",     "transactions": 20, "nodes": 1},
+            {"id": "S3", "curve": "secp256r1", "scalar_type": "random", "transactions": 50, "nodes": 2},
+            {"id": "S4", "curve": "secp256r1", "scalar_type": "de",     "transactions": 50, "nodes": 2},
         ]
-        cfg.BATCH_SIZES = [10, 50]
-        cfg.THREAD_COUNTS = [1, 2]
-        cfg.DE_PARAMS["population_size"] = [20, 50]
+        de_params["population_size"] = 20
+        de_params["generations"] = 20
+
+    if args.scenario:
+        # Filter scenario by ID
+        scenarios = [s for s in scenarios if s["id"] == args.scenario.upper()]
+        if not scenarios:
+            print(f"Scenario '{args.scenario}' tidak ditemukan. "
+                  f"Pilihan: {[s['id'] for s in SCENARIOS]}")
+            return 1
 
     if args.mode in ("scenarios", "all"):
-        from experiment_runner import run_scenarios
-        run_scenarios(results_dir=args.results_dir)
-
-    if args.mode in ("sweep", "all"):
-        from experiment_runner import run_parameter_sweep
-        run_parameter_sweep(results_dir=args.results_dir)
-
-    if args.mode in ("analysis", "all"):
-        from analysis import run_analysis
-        res = run_analysis(results_dir=args.results_dir)
-        print("Parameter paling mempengaruhi RAM:", res.get("parameter_most_affects_RAM"))
-        print("Sensitivity ranking (top 5):")
-        for r in res.get("sensitivity_ranking", [])[:5]:
-            print(" ", r.get("parameter"), "-> correlation:", r.get("correlation_with_RAM"), "range:", r.get("RAM_range_when_varied"))
+        from experiment_runner import run_all_scenarios
+        results = run_all_scenarios(
+            scenarios=scenarios,
+            de_params=de_params,
+            results_dir=args.results_dir,
+        )
 
     if args.mode in ("viz", "all"):
         from visualization import generate_all
@@ -66,11 +88,9 @@ def main():
             results_dir=args.results_dir,
             open_browser=not args.no_browser,
         )
-        print("Grafik tersimpan:")
+        print("\nGrafik tersimpan:")
         for name, path in paths.items():
-            print(" ", path)
-        if paths.get("dashboard"):
-            print("\nDashboard (semua grafik):", paths["dashboard"])
+            print(f"  {path}")
 
     return 0
 

@@ -1,29 +1,143 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hasil Eksperimen ECC + DE - Grafik</title>
-  <style>
-    body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 20px; background: #f5f5f5; }
-    h1 { color: #1a1a2e; border-bottom: 2px solid #16213e; padding-bottom: 8px; }
-    .summary { background: #fff; padding: 16px; border-radius: 8px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
-    .summary ul { margin: 8px 0 0 20px; }
-    .cards { display: flex; flex-wrap: wrap; gap: 24px; }
-    .card { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); max-width: 100%; }
-    .card h3 { margin: 0 0 12px 0; color: #16213e; font-size: 1.1em; }
-    .card img { max-width: 100%; height: auto; display: block; border-radius: 4px; }
-  </style>
+<meta charset="UTF-8">
+<title>ECC-DE Blockchain Experiment</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    background: #f0f2f5; color: #333; line-height: 1.65;
+  }
+  .container { max-width: 980px; margin: 0 auto; padding: 36px 24px; }
+
+  h1 { font-size: 24px; font-weight: 700; color: #1a1a1a; text-align: center; margin-bottom: 6px; }
+  .subtitle { text-align: center; color: #777; font-size: 13.5px; margin-bottom: 32px; }
+
+  .card {
+    background: #fff; border-radius: 10px; margin-bottom: 26px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06); overflow: hidden;
+    border: 1px solid #e8e8e8;
+  }
+  .card-header {
+    background: #3d4f5f; color: #fff; padding: 12px 20px;
+    font-size: 15px; font-weight: 600; letter-spacing: 0.2px;
+  }
+  .card-body { padding: 16px 20px; }
+  .card img { width: 100%; display: block; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    background: #4a5d6e; color: #fff; padding: 9px 10px;
+    text-align: center; font-weight: 600; font-size: 12.5px;
+  }
+  td { padding: 8px 10px; text-align: center; border-bottom: 1px solid #f0f0f0; }
+  .row-random { background: #fafafa; }
+  .row-de { background: #f4f7fa; }
+  tbody tr:hover td { background: #eef2f7; }
+
+  .arrow-up { color: #3a8a5c; font-weight: bold; }
+  .arrow-down { color: #4a6fa5; font-weight: bold; }
+
+  .badge {
+    display: inline-block; padding: 5px 14px; border-radius: 14px;
+    font-size: 12px; font-weight: 600; margin-bottom: 8px;
+  }
+  .badge-up { background: #eaf5ee; color: #2d7a47; }
+  .badge-down { background: #eaf1fa; color: #2c5ea0; }
+
+  .description { font-size: 13.5px; color: #666; margin-top: 4px; line-height: 1.75; }
+  .description b { color: #444; }
+
+  .legend { font-size: 12px; color: #888; margin-top: 12px; }
+  .swatch {
+    display: inline-block; width: 12px; height: 12px;
+    border-radius: 3px; vertical-align: middle; margin-right: 4px;
+  }
+  .swatch-random { background: #5B7BA5; }
+  .swatch-de { background: #2C2C2C; }
+
+  .footer {
+    text-align: center; color: #aaa; font-size: 12px;
+    margin-top: 36px; padding-top: 18px; border-top: 1px solid #e0e0e0;
+  }
+</style>
 </head>
 <body>
-  <h1>Hasil Eksperimen ECC + DE — Grafik</h1>
-  <section class='summary'><h2>Ringkasan Analisis</h2><ul><li><strong>Parameter paling mempengaruhi RAM:</strong> de_population</li><li>de_population: korelasi=-0.054, range RAM=1.2923</li><li>de_CR: korelasi=0.0445, range RAM=1.2963</li><li>de_F: korelasi=0.0276, range RAM=1.2963</li><li>de_generations: korelasi=0.0, range RAM=1.2963</li></ul></section>
-  <div class="cards">
-    <div class="card"><h3>RAM vs Jumlah Operasi (Iterations)</h3><img src="ram_vs_iterations.png" alt="RAM vs Jumlah Operasi (Iterations)" /></div>
-<div class="card"><h3>RAM vs Ukuran Curve (bits)</h3><img src="ram_vs_curve_size.png" alt="RAM vs Ukuran Curve (bits)" /></div>
-<div class="card"><h3>RAM vs Jumlah Threads</h3><img src="ram_vs_threads.png" alt="RAM vs Jumlah Threads" /></div>
-<div class="card"><h3>DE: Ringkasan Memory, Time, CPU</h3><img src="de_summary.png" alt="DE: Ringkasan Memory, Time, CPU" /></div>
-<div class="card"><h3>Parameter DE yang Paling Mempengaruhi RAM</h3><img src="sensitivity_ranking.png" alt="Parameter DE yang Paling Mempengaruhi RAM" /></div>
+<div class="container">
+  <h1>ECC-DE Blockchain Experiment</h1>
+  <p class="subtitle">Perbandingan Scalar Random vs Differential Evolution pada Blockchain Simulator</p>
+
+    <div class="card">
+      <div class="card-header">Ringkasan Hasil Eksperimen</div>
+      <div class="card-body">
+        <table>
+          <thead>
+            <tr>
+              <th>Skenario</th><th>Curve</th><th>Scalar</th><th>TX</th><th>Nodes</th>
+              <th>RAM (MB) <span class="arrow-down">&darr;</span></th>
+              <th>CPU (%) <span class="arrow-down">&darr;</span></th>
+              <th>Waktu (ms) <span class="arrow-down">&darr;</span></th>
+              <th>Entropy <span class="arrow-up">&uarr;</span></th>
+            </tr>
+          </thead>
+          <tbody><tr class='row-random'><td>S1</td><td>secp192r1</td><td>RANDOM</td><td>100</td><td>1</td><td>0.48</td><td>0.0</td><td>2345.5</td><td><b>0.995664</b></td></tr>
+<tr class='row-de'><td>S2</td><td>secp192r1</td><td>DE</td><td>100</td><td>1</td><td>0.43</td><td>0.0</td><td>8799.4</td><td><b>0.999995</b></td></tr>
+<tr class='row-random'><td>S3</td><td>secp224r1</td><td>RANDOM</td><td>1000</td><td>3</td><td>4.95</td><td>0.0</td><td>50033.2</td><td><b>0.996762</b></td></tr>
+<tr class='row-de'><td>S4</td><td>secp224r1</td><td>DE</td><td>1000</td><td>3</td><td>4.81</td><td>0.0</td><td>224017.2</td><td><b>0.999996</b></td></tr>
+<tr class='row-random'><td>S5</td><td>secp256r1</td><td>RANDOM</td><td>5000</td><td>5</td><td>27.50</td><td>0.0</td><td>333538.4</td><td><b>0.997146</b></td></tr>
+<tr class='row-de'><td>S6</td><td>secp256r1</td><td>DE</td><td>5000</td><td>5</td><td>27.34</td><td>0.0</td><td>1188038.6</td><td><b>0.999996</b></td></tr>
+<tr class='row-random'><td>S1</td><td>secp192r1</td><td>RANDOM</td><td>100</td><td>1</td><td>0.48</td><td>0.0</td><td>2307.6</td><td><b>0.995664</b></td></tr>
+<tr class='row-de'><td>S2</td><td>secp192r1</td><td>DE</td><td>100</td><td>1</td><td>0.43</td><td>0.0</td><td>14848.3</td><td><b>0.999995</b></td></tr>
+<tr class='row-random'><td>S3</td><td>secp224r1</td><td>RANDOM</td><td>1000</td><td>3</td><td>4.95</td><td>0.0</td><td>54740.8</td><td><b>0.996762</b></td></tr>
+<tr class='row-de'><td>S4</td><td>secp224r1</td><td>DE</td><td>1000</td><td>3</td><td>4.81</td><td>0.0</td><td>196659.6</td><td><b>0.999996</b></td></tr>
+<tr class='row-random'><td>S5</td><td>secp256r1</td><td>RANDOM</td><td>5000</td><td>5</td><td>27.50</td><td>0.0</td><td>314754.8</td><td><b>0.997146</b></td></tr>
+<tr class='row-de'><td>S6</td><td>secp256r1</td><td>DE</td><td>5000</td><td>5</td><td>27.34</td><td>0.0</td><td>1060839.4</td><td><b>0.999996</b></td></tr>
+</tbody>
+        </table>
+        <p class="legend">
+          <span class="swatch swatch-random"></span> Random &nbsp;&nbsp;
+          <span class="swatch swatch-de"></span> DE Optimized &nbsp;&nbsp;|&nbsp;&nbsp;
+          &uarr; lebih tinggi lebih baik &nbsp;&nbsp; &darr; lebih rendah lebih baik
+        </p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Shannon Entropy: Random vs DE</div>
+      <img src="entropy_comparison.png" alt="Shannon Entropy: Random vs DE">
+      <div class="card-body">
+        <span class="badge badge-up">Lebih Tinggi = Lebih Baik</span>
+        <p class="description">Shannon Entropy mengukur kualitas randomness dari representasi bit scalar. Nilai maksimum = 1.0 (distribusi bit 0 dan 1 seimbang sempurna). Scalar DE diharapkan memiliki entropy lebih tinggi, menandakan distribusi bit lebih merata.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">Resource Usage (RAM, CPU, Time)</div>
+      <img src="resource_comparison.png" alt="Resource Usage (RAM, CPU, Time)">
+      <div class="card-body">
+        <span class="badge badge-down">Lebih Rendah = Lebih Efisien</span>
+        <p class="description"><b>RAM (MB)</b> — puncak penggunaan memori. <b>CPU (%)</b> — beban prosesor. <b>Execution Time (ms)</b> — total waktu eksekusi (scalar generation + key generation + signing + verification + block building).</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">Pengujian Statistik Randomness</div>
+      <img src="statistical_tests.png" alt="Pengujian Statistik Randomness">
+      <div class="card-body">
+        <span class="badge badge-up">PASS = Scalar Random Berkualitas</span>
+        <p class="description">1. <b>Shannon Entropy</b> — Entropy &ge; 0.95 = PASS<br>2. <b>Frequency (Monobit)</b> — p-value &ge; 0.01 = PASS<br>3. <b>Chi-Square</b> — p-value &ge; 0.01 = PASS<br>4. <b>Runs Test</b> — p-value &ge; 0.01 = PASS<br>5. <b>Autocorrelation</b> — p-value &ge; 0.01 = PASS</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">Timing Breakdown</div>
+      <img src="timing_breakdown.png" alt="Timing Breakdown">
+      <div class="card-body">
+        <span class="badge badge-down">Lebih Rendah = Lebih Cepat</span>
+        <p class="description"><b>Scalar Gen</b> — DE lebih lama karena proses optimasi. <b>Key Gen / Signing / Verification</b> — seharusnya setara antara Random dan DE. <b>Block Build</b> — pembuatan blok blockchain termasuk Merkle tree.</p>
+      </div>
+    </div>
+  <div class="footer">
+    ECC-DE Blockchain Simulator &mdash; Kurva: secp192r1 (P-192), secp224r1 (P-224), secp256r1 (P-256)
   </div>
+</div>
 </body>
 </html>
