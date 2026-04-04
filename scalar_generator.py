@@ -124,29 +124,274 @@ def de_optimized_scalars(
     return scalars
 
 
+
+
+def _ga_de_optimize_scalar(
+    curve_name: str,
+    population_size: int,
+    generations: int,
+    de_F: float,
+    de_CR: float,
+    ga_MR: float,
+    ga_CR: float,
+    objective: Callable[[int], float],
+    seed: Optional[int] = None,
+) -> int:
+    if seed is not None:
+        random.seed(seed)
+    order = get_curve_order(curve_name)
+    lo, hi = 1, order - 1
+
+    def clip(x: float) -> int:
+        x = int(round(x))
+        return max(lo, min(hi, x))
+
+    pop = [random.randrange(lo, hi + 1) for _ in range(population_size)]
+    fitness = [objective(k) for k in pop]
+
+    ga_gens = generations // 2
+    de_gens = generations - ga_gens
+
+    # Phase 1: GA
+    for _gen in range(ga_gens):
+        new_pop = []
+        def select():
+            k1, k2 = random.sample(range(population_size), 2)
+            return k1 if fitness[k1] <= fitness[k2] else k2
+            
+        for _ in range((population_size + 1) // 2):
+            p1 = pop[select()]
+            p2 = pop[select()]
+            
+            if random.random() < ga_CR:
+                alpha = random.random()
+                c1 = clip(alpha * p1 + (1 - alpha) * p2)
+                c2 = clip((1 - alpha) * p1 + alpha * p2)
+            else:
+                c1, c2 = p1, p2
+                
+            if random.random() < ga_MR:
+                c1 = clip(c1 + random.uniform(-0.1, 0.1) * (hi - lo))
+            if random.random() < ga_MR:
+                c2 = clip(c2 + random.uniform(-0.1, 0.1) * (hi - lo))
+                
+            new_pop.extend([c1, c2])
+            
+        pop = new_pop[:population_size]
+        fitness = [objective(k) for k in pop]
+
+    # Phase 2: DE
+    for _gen in range(de_gens):
+        for i in range(population_size):
+            idx = list(range(population_size))
+            idx.remove(i)
+            a, b, c = random.sample(idx, 3)
+            mutant = clip(pop[a] + de_F * (pop[b] - pop[c]))
+            trial = mutant if random.random() < de_CR else pop[i]
+            
+            f_trial = objective(trial)
+            if f_trial <= fitness[i]:
+                pop[i] = trial
+                fitness[i] = f_trial
+
+    best_idx = min(range(population_size), key=lambda i: fitness[i])
+    return pop[best_idx]
+
+
+def ga_de_optimized_scalars(
+    curve_name: str,
+    count: int,
+    population_size: int = 50,
+    generations: int = 100,
+    de_F: float = 0.8,
+    de_CR: float = 0.9,
+    ga_MR: float = 0.1,
+    ga_CR: float = 0.9,
+    seed: Optional[int] = None,
+) -> List[int]:
+    bit_length = get_curve_bit_size(curve_name)
+    def objective(k: int) -> float:
+        return -shannon_entropy(k, bit_length)
+
+    scalars: List[int] = []
+    for i in range(count):
+        s = _ga_de_optimize_scalar(
+            curve_name,
+            population_size=population_size,
+            generations=generations,
+            de_F=de_F,
+            de_CR=de_CR,
+            ga_MR=ga_MR,
+            ga_CR=ga_CR,
+            objective=objective,
+            seed=(seed + i) if seed is not None else None,
+        )
+        scalars.append(s)
+    return scalars
+
+
+def _eg_de_optimize_scalar(
+    curve_name: str,
+    population_size: int,
+    generations: int,
+    F: float,
+    CR: float,
+    objective: Callable[[int], float],
+    seed: Optional[int] = None,
+) -> int:
+    if seed is not None:
+        random.seed(seed)
+    order = get_curve_order(curve_name)
+    bit_length = get_curve_bit_size(curve_name)
+    lo, hi = 1, order - 1
+
+    # Step 1: Entropy Guided Scalar Initialization (EGI)
+    pop = []
+    # Target 50% ones
+    ones_count = bit_length // 2
+    zeros_count = bit_length - ones_count
+
+    while len(pop) < population_size:
+        # Create balanced bit list
+        bits = ['1'] * ones_count + ['0'] * zeros_count
+        random.shuffle(bits)
+        # Convert to integer
+        k = int("".join(bits), 2)
+        if lo <= k <= hi:
+            pop.append(k)
+
+    fitness = [objective(k) for k in pop]
+    
+    # Track best for early stopping
+    best_fitness = min(fitness)
+    gens_without_improvement = 0
+
+    # Step 3: DE Refinement
+    for gen in range(generations):
+        # Early stopping constraints
+        # Stop if best entropy >= 0.999 (which means fitness <= -0.999)
+        if best_fitness <= -0.999:
+            break
+        if gens_without_improvement >= 10:
+            break
+            
+        gen_improved = False
+
+        for i in range(population_size):
+            idx = list(range(population_size))
+            idx.remove(i)
+            a, b, c = random.sample(idx, 3)
+            
+            # Mutation: vi = kr1 + F*(kr2 - kr3) mod n
+            diff = pop[b] - pop[c]
+            mutant = int(pop[a] + F * diff) % order
+            # Ensure valid bounds (1 <= k <= n-1)
+            if mutant == 0:
+                mutant = 1
+                
+            # Crossover
+            if random.random() < CR:
+                trial = mutant
+            else:
+                trial = pop[i]
+                
+            f_trial = objective(trial)
+            
+            # Selection
+            if f_trial <= fitness[i]:
+                pop[i] = trial
+                fitness[i] = f_trial
+                
+                if f_trial < best_fitness:
+                    best_fitness = f_trial
+                    gen_improved = True
+                    
+        if not gen_improved:
+            gens_without_improvement += 1
+        else:
+            gens_without_improvement = 0
+
+    best_idx = min(range(population_size), key=lambda i: fitness[i])
+    return pop[best_idx]
+
+
+def eg_de_optimized_scalars(
+    curve_name: str,
+    count: int,
+    population_size: int = 50,
+    generations: int = 100,
+    F: float = 0.8,
+    CR: float = 0.9,
+    seed: Optional[int] = None,
+) -> List[int]:
+    bit_length = get_curve_bit_size(curve_name)
+    def objective(k: int) -> float:
+        return -shannon_entropy(k, bit_length)
+
+    scalars: List[int] = []
+    for i in range(count):
+        s = _eg_de_optimize_scalar(
+            curve_name,
+            population_size=population_size,
+            generations=generations,
+            F=F,
+            CR=CR,
+            objective=objective,
+            seed=(seed + i) if seed is not None else None,
+        )
+        scalars.append(s)
+    return scalars
+
+
 def get_scalars(
     curve_name: str,
     count: int,
     scalar_type: str,
-    de_population: int = 50,
-    de_generations: int = 100,
-    de_F: float = 0.8,
-    de_CR: float = 0.9,
+    de_params: Optional[dict] = None,
+    ga_de_params: Optional[dict] = None,
+    eg_de_params: Optional[dict] = None,
     seed: Optional[int] = 42,
 ) -> List[int]:
-    """
-    Satu entry point: scalar_type in ('random', 'de').
-    """
     if scalar_type == "random":
         return random_scalars(curve_name, count, seed=seed)
+        
     if scalar_type == "de":
+        if de_params is None: de_params = {}
         return de_optimized_scalars(
             curve_name,
             count,
-            population_size=de_population,
-            generations=de_generations,
-            F=de_F,
-            CR=de_CR,
+            population_size=de_params.get("population_size", 50),
+            generations=de_params.get("generations", 100),
+            F=de_params.get("mutation_factor", 0.8),
+            CR=de_params.get("crossover_rate", 0.9),
             seed=seed,
         )
-    raise ValueError("scalar_type harus 'random' atau 'de'")
+
+    if scalar_type == "ga_de":
+        if ga_de_params is None: ga_de_params = {}
+        return ga_de_optimized_scalars(
+            curve_name,
+            count,
+            population_size=ga_de_params.get("population_size", 50),
+            generations=ga_de_params.get("generations", 100),
+            de_F=ga_de_params.get("de_mutation_factor", 0.8),
+            de_CR=ga_de_params.get("de_crossover_rate", 0.9),
+            ga_MR=ga_de_params.get("ga_mutation_rate", 0.1),
+            ga_CR=ga_de_params.get("ga_crossover_rate", 0.9),
+            seed=seed,
+        )
+
+    if scalar_type == "eg_de":
+        if eg_de_params is None: eg_de_params = {}
+        return eg_de_optimized_scalars(
+            curve_name,
+            count,
+            population_size=eg_de_params.get("population_size", 50),
+            generations=eg_de_params.get("generations", 100),
+            F=eg_de_params.get("mutation_factor", 0.8),
+            CR=eg_de_params.get("crossover_rate", 0.9),
+            seed=seed,
+        )
+        
+    raise ValueError("scalar_type harus 'random', 'de', 'ga_de', atau 'eg_de'")
+

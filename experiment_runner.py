@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Experiment Runner: menjalankan skenario blockchain S1–S6.
+Experiment Runner: menjalankan skenario blockchain S1-S15.
 Workflow per skenario:
-1. Generate scalars (random atau DE)
+1. Generate scalars (random / DE / GA / GA+DE / EG+DE)
 2. Generate ECC keypairs dari scalars
 3. Create transactions (random sender/receiver/amount)
 4. Sign all transactions
@@ -19,7 +19,10 @@ import time
 import random as rand_module
 from typing import List, Dict, Any, Optional
 
-from config import SCENARIOS, DE_PARAMS, RESULTS_DIR, LOG_FILE
+from config import (
+    SCENARIOS, DE_PARAMS,
+    GA_DE_PARAMS, EG_DE_PARAMS, RESULTS_DIR, LOG_FILE
+)
 from ecc_engine import (
     generate_key_pair_from_scalar,
     get_curve_bit_size,
@@ -40,7 +43,6 @@ def _generate_address(verifying_key) -> str:
 
 def _run_one_scenario(
     scenario: Dict[str, Any],
-    de_params: Dict[str, Any],
     seed: int = 42,
 ) -> Dict[str, Any]:
     """
@@ -77,14 +79,13 @@ def _run_one_scenario(
             curve_name=curve_name,
             count=num_transactions,
             scalar_type=scalar_type,
-            de_population=de_params["population_size"],
-            de_generations=de_params["generations"],
-            de_F=de_params["mutation_factor"],
-            de_CR=de_params["crossover_rate"],
+            de_params=DE_PARAMS,
+            ga_de_params=GA_DE_PARAMS,
+            eg_de_params=EG_DE_PARAMS,
             seed=seed,
         )
         t_scalar = time.perf_counter() - t0
-        print(f"       → {len(scalars)} scalars in {t_scalar:.2f}s")
+        print(f"       -> {len(scalars)} scalars in {t_scalar:.2f}s")
 
         # Step 2: Generate keypairs dari scalars
         print(f"  [2/7] Generate {num_transactions} ECC keypairs...")
@@ -94,7 +95,7 @@ def _run_one_scenario(
             sk, vk = generate_key_pair_from_scalar(curve_name, s)
             keypairs.append((sk, vk))
         t_keygen = time.perf_counter() - t0
-        print(f"       → {len(keypairs)} keypairs in {t_keygen:.2f}s")
+        print(f"       -> {len(keypairs)} keypairs in {t_keygen:.2f}s")
 
         # Step 3: Create transactions
         print(f"  [3/7] Create {num_transactions} transactions...")
@@ -114,7 +115,7 @@ def _run_one_scenario(
             )
             transactions.append(tx)
         t_create = time.perf_counter() - t0
-        print(f"       → {len(transactions)} transactions in {t_create:.4f}s")
+        print(f"       -> {len(transactions)} transactions in {t_create:.4f}s")
 
         # Step 4: Sign all transactions
         print(f"  [4/7] Sign {num_transactions} transactions...")
@@ -124,14 +125,14 @@ def _run_one_scenario(
             sk, vk = keypairs[sender_idx]
             tx.sign(sk)
         t_sign = time.perf_counter() - t0
-        print(f"       → Signed in {t_sign:.2f}s")
+        print(f"       -> Signed in {t_sign:.2f}s")
 
         # Step 5: Verify all transactions
         print(f"  [5/7] Verify {num_transactions} transactions...")
         t0 = time.perf_counter()
         verified_count = sum(1 for tx in transactions if tx.verify())
         t_verify = time.perf_counter() - t0
-        print(f"       → {verified_count}/{num_transactions} verified in {t_verify:.2f}s")
+        print(f"       -> {verified_count}/{num_transactions} verified in {t_verify:.2f}s")
 
         # Step 6: Build blocks via Node(s)
         print(f"  [6/7] Build blockchain ({num_nodes} nodes)...")
@@ -151,14 +152,14 @@ def _run_one_scenario(
 
         total_blocks = sum(len(n.blockchain) for n in nodes)
         chain_valid = all(n.validate_chain() for n in nodes)
-        print(f"       → {total_blocks} blocks, chain_valid={chain_valid} in {t_block:.4f}s")
+        print(f"       -> {total_blocks} blocks, chain_valid={chain_valid} in {t_block:.4f}s")
 
         # Step 7: Statistical tests pada scalars
         print(f"  [7/7] Run statistical tests...")
         t0 = time.perf_counter()
         stat_results = run_all_tests(scalars, bit_length)
         t_stats = time.perf_counter() - t0
-        print(f"       → {len(stat_results)} tests in {t_stats:.4f}s")
+        print(f"       -> {len(stat_results)} tests in {t_stats:.4f}s")
 
     # ---- Compile results ----
     formatted = format_metrics(metrics)
@@ -203,7 +204,7 @@ def _run_one_scenario(
     print(f"    Entropy   : {result['entropy']:.6f}")
     print(f"    Chi-square: {result['chi_square']}")
     for st in stat_results:
-        status = "✓ PASS" if st["passed"] else "✗ FAIL"
+        status = "[PASS]" if st["passed"] else "[FAIL]"
         print(f"    {st['test_name']:20s} : {status}  (stat={st['statistic']})")
 
     return result
@@ -211,18 +212,15 @@ def _run_one_scenario(
 
 def run_all_scenarios(
     scenarios: Optional[List[Dict]] = None,
-    de_params: Optional[Dict] = None,
     results_dir: str = RESULTS_DIR,
     log_file: str = LOG_FILE,
     seed: int = 42,
 ) -> List[Dict[str, Any]]:
     """
-    Jalankan semua skenario (S1–S6) dan simpan log JSONL.
+    Jalankan skenario yang dipilih dan simpan log JSONL.
     """
     if scenarios is None:
         scenarios = SCENARIOS
-    if de_params is None:
-        de_params = DE_PARAMS
 
     os.makedirs(results_dir, exist_ok=True)
     log_path = os.path.join(results_dir, log_file)
@@ -231,13 +229,11 @@ def run_all_scenarios(
 
     print(f"\n{'#'*60}")
     print(f"  ECC-DE Blockchain Experiment")
-    print(f"  {len(scenarios)} scenarios | DE: pop={de_params['population_size']}, "
-          f"gen={de_params['generations']}, F={de_params['mutation_factor']}, "
-          f"CR={de_params['crossover_rate']}")
+    print(f"  {len(scenarios)} scenarios selected.")
     print(f"{'#'*60}")
 
     for scenario in scenarios:
-        result = _run_one_scenario(scenario, de_params, seed=seed)
+        result = _run_one_scenario(scenario, seed=seed)
         all_results.append(result)
 
         # Append ke log file (JSONL)
@@ -260,5 +256,98 @@ def run_all_scenarios(
     return all_results
 
 
+def show_menu():
+    """Tampilkan menu interaktif untuk memilih skenario berdasarkan algoritma."""
+
+    # Kumpulkan tipe algoritma unik
+    algo_types = []
+    for s in SCENARIOS:
+        if s["scalar_type"] not in algo_types:
+            algo_types.append(s["scalar_type"])
+
+    algo_labels = {
+        "random": "Random",
+        "de":     "Differential Evolution (DE)",
+        "ga":     "Genetic Algorithm (GA)",
+        "ga_de":  "GA + DE (Sequential)",
+        "eg_de":  "Entropy Guided Init + DE",
+    }
+
+    print("\n" + "=" * 60)
+    print("  ECC Blockchain Experiment - Pilih Algoritma")
+    print("=" * 60)
+    print()
+    print("  Pilih algoritma yang ingin dijalankan:")
+    print()
+    for i, algo in enumerate(algo_types, 1):
+        label = algo_labels.get(algo, algo)
+        count = sum(1 for s in SCENARIOS if s["scalar_type"] == algo)
+        print(f"    {i}. {label:<30s} ({count} skenario)")
+    print()
+    print(f"    {len(algo_types)+1}. Jalankan SEMUA algoritma")
+    print(f"    0. Keluar")
+    print()
+    print("  Ketik nomor dipisah koma untuk memilih beberapa,")
+    print("  misal: 1,2 untuk Random + DE")
+    print()
+
+    choice = input("  Pilihan Anda: ").strip()
+
+    if choice == '0' or choice.lower() == 'q':
+        print("  Keluar.")
+        return []
+
+    # Pilih semua
+    if choice == str(len(algo_types) + 1) or choice.lower() == 'all':
+        print(f"\n  -> Menjalankan semua {len(SCENARIOS)} skenario.")
+        return list(SCENARIOS)
+
+    # Parse pilihan
+    selected_algos = []
+    parts = [p.strip() for p in choice.split(",")]
+    for part in parts:
+        if part.isdigit():
+            idx = int(part) - 1
+            if 0 <= idx < len(algo_types):
+                selected_algos.append(algo_types[idx])
+            else:
+                print(f"  [!] Nomor '{part}' tidak valid, dilewati.")
+        else:
+            # Coba sebagai nama algoritma langsung
+            if part.lower() in algo_types:
+                selected_algos.append(part.lower())
+            else:
+                print(f"  [!] '{part}' tidak dikenali, dilewati.")
+
+    if not selected_algos:
+        print("  Tidak ada algoritma yang dipilih.")
+        return []
+
+    # Filter skenario berdasarkan algoritma terpilih
+    selected = [s for s in SCENARIOS if s["scalar_type"] in selected_algos]
+
+    # Tampilkan ringkasan
+    print(f"\n  -> {len(selected)} skenario akan dijalankan:")
+    for s in selected:
+        label = algo_labels.get(s["scalar_type"], s["scalar_type"])
+        print(f"     {s['id']}: {s['curve']} | {label} | {s['transactions']} tx")
+    print()
+
+    return selected
+
+
 if __name__ == "__main__":
-    run_all_scenarios()
+    selected = show_menu()
+    if selected:
+        run_all_scenarios(scenarios=selected)
+        
+        # Otomatis update & buka web
+        try:
+            from visualization import generate_all
+            print("\n  Mengupdate Web Dashboard...")
+            paths = generate_all(open_browser=False)
+            if "dashboard" in paths:
+                print(f"  Dashboard diperbarui: {paths['dashboard']}")
+                print("  Silakan refresh (F5) tab browser Anda untuk melihat data terbaru.")
+        except ImportError:
+            pass
