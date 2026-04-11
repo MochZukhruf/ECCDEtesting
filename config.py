@@ -14,22 +14,26 @@ CURVES = {
 # Skenario penelitian
 SCENARIOS = [
     # secp192r1 (P-192), 100 tx, 1 node
+    # secp192r1 (P-192), 100 tx, 1 node
     {"id": "S1",  "curve": "secp192r1", "scalar_type": "random", "transactions": 100,  "nodes": 1},
     {"id": "S2",  "curve": "secp192r1", "scalar_type": "de",     "transactions": 100,  "nodes": 1},
     {"id": "S3",  "curve": "secp192r1", "scalar_type": "ga_de",  "transactions": 100,  "nodes": 1},
-    {"id": "S4",  "curve": "secp192r1", "scalar_type": "eg_de",  "transactions": 100,  "nodes": 1},
+    {"id": "S4",  "curve": "secp192r1", "scalar_type": "eg",     "transactions": 100,  "nodes": 1},
+    {"id": "S5",  "curve": "secp192r1", "scalar_type": "eg_de",  "transactions": 100,  "nodes": 1},
     
     # secp224r1 (P-224), 1000 tx, 3 nodes
-    {"id": "S5",  "curve": "secp224r1", "scalar_type": "random", "transactions": 1000, "nodes": 3},
-    {"id": "S6",  "curve": "secp224r1", "scalar_type": "de",     "transactions": 1000, "nodes": 3},
-    {"id": "S7",  "curve": "secp224r1", "scalar_type": "ga_de",  "transactions": 1000, "nodes": 3},
-    {"id": "S8",  "curve": "secp224r1", "scalar_type": "eg_de",  "transactions": 1000, "nodes": 3},
+    {"id": "S6",  "curve": "secp224r1", "scalar_type": "random", "transactions": 1000, "nodes": 3},
+    {"id": "S7",  "curve": "secp224r1", "scalar_type": "de",     "transactions": 1000, "nodes": 3},
+    {"id": "S8",  "curve": "secp224r1", "scalar_type": "ga_de",  "transactions": 1000, "nodes": 3},
+    {"id": "S9",  "curve": "secp224r1", "scalar_type": "eg",     "transactions": 1000, "nodes": 3},
+    {"id": "S10", "curve": "secp224r1", "scalar_type": "eg_de",  "transactions": 1000, "nodes": 3},
 
     # secp256r1 (P-256), 5000 tx, 5 nodes
-    {"id": "S9",  "curve": "secp256r1", "scalar_type": "random", "transactions": 5000, "nodes": 5},
-    {"id": "S10", "curve": "secp256r1", "scalar_type": "de",     "transactions": 5000, "nodes": 5},
-    {"id": "S11", "curve": "secp256r1", "scalar_type": "ga_de",  "transactions": 5000, "nodes": 5},
-    {"id": "S12", "curve": "secp256r1", "scalar_type": "eg_de",  "transactions": 5000, "nodes": 5},
+    {"id": "S11", "curve": "secp256r1", "scalar_type": "random", "transactions": 5000, "nodes": 5},
+    {"id": "S12", "curve": "secp256r1", "scalar_type": "de",     "transactions": 5000, "nodes": 5},
+    {"id": "S13", "curve": "secp256r1", "scalar_type": "ga_de",  "transactions": 5000, "nodes": 5},
+    {"id": "S14", "curve": "secp256r1", "scalar_type": "eg",     "transactions": 5000, "nodes": 5},
+    {"id": "S15", "curve": "secp256r1", "scalar_type": "eg_de",  "transactions": 5000, "nodes": 5},
 ]
 
 # Parameter Differential Evolution (sesuai jurnal)

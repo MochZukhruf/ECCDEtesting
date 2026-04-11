@@ -225,6 +225,10 @@ def run_all_scenarios(
     os.makedirs(results_dir, exist_ok=True)
     log_path = os.path.join(results_dir, log_file)
 
+    # Kosongkan file log lama agar data tidak menumpuk (overwrite data lama)
+    with open(log_path, "w", encoding="utf-8") as f:
+        pass
+
     all_results = []
 
     print(f"\n{'#'*60}")
@@ -270,6 +274,7 @@ def show_menu():
         "de":     "Differential Evolution (DE)",
         "ga":     "Genetic Algorithm (GA)",
         "ga_de":  "GA + DE (Sequential)",
+        "eg":     "Entropy Guided Init Only",
         "eg_de":  "Entropy Guided Init + DE",
     }
 

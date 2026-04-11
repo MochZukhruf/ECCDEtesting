@@ -266,6 +266,7 @@ def generate_dashboard_html(
   .algo-de {{ background: rgba(251,146,60,0.15); color: var(--accent-orange); }}
   .algo-ga {{ background: rgba(167,139,250,0.15); color: var(--accent-purple); }}
   .algo-ga_de {{ background: rgba(52,211,153,0.15); color: var(--accent-green); }}
+  .algo-eg {{ background: rgba(236,72,153,0.15); color: #ec4899; }}
   .algo-eg_de {{ background: rgba(34,211,238,0.15); color: var(--accent-cyan); }}
 
   .exp-meta {{
@@ -437,6 +438,7 @@ def generate_dashboard_html(
         <option value="de">DE</option>
         <option value="ga">GA</option>
         <option value="ga_de">GA + DE</option>
+        <option value="eg">EG</option>
         <option value="eg_de">EG + DE</option>
       </select>
       <select class="filter-select" id="filter-curve" onchange="applyFilters()">
@@ -468,6 +470,7 @@ const ALGO_LABELS = {{
   'de': 'Differential Evolution',
   'ga': 'Genetic Algorithm',
   'ga_de': 'GA + DE',
+  'eg': 'Entropy Guided Init Only',
   'eg_de': 'Entropy Guided + DE'
 }};
 

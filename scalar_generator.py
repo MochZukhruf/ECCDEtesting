@@ -230,6 +230,34 @@ def ga_de_optimized_scalars(
     return scalars
 
 
+def eg_scalars(
+    curve_name: str,
+    count: int,
+    seed: Optional[int] = None,
+) -> List[int]:
+    """Generate scalars menggunakan Entropy Guided Initialization saja (tanpa DE)."""
+    if seed is not None:
+        random.seed(seed)
+    
+    order = get_curve_order(curve_name)
+    bit_length = get_curve_bit_size(curve_name)
+    lo, hi = 1, order - 1
+    
+    scalars = []
+    ones_count = bit_length // 2
+    zeros_count = bit_length - ones_count
+    
+    for _ in range(count):
+        while True:
+            bits = ['1'] * ones_count + ['0'] * zeros_count
+            random.shuffle(bits)
+            k = int("".join(bits), 2)
+            if lo <= k <= hi:
+                scalars.append(k)
+                break
+                
+    return scalars
+
 def _eg_de_optimize_scalar(
     curve_name: str,
     population_size: int,
@@ -381,6 +409,9 @@ def get_scalars(
             seed=seed,
         )
 
+    if scalar_type == "eg":
+        return eg_scalars(curve_name, count, seed=seed)
+
     if scalar_type == "eg_de":
         if eg_de_params is None: eg_de_params = {}
         return eg_de_optimized_scalars(
@@ -393,5 +424,5 @@ def get_scalars(
             seed=seed,
         )
         
-    raise ValueError("scalar_type harus 'random', 'de', 'ga_de', atau 'eg_de'")
+    raise ValueError("scalar_type harus 'random', 'de', 'ga_de', 'eg', atau 'eg_de'")
 
